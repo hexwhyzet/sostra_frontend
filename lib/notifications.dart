@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:qr_reader/request.dart';
 import 'package:qr_reader/settings.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_reader/reassign_duty_screen.dart';
 
 class NotificationBadge extends StatefulWidget {
   const NotificationBadge({super.key});
@@ -137,6 +138,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  bool _isDutyRefusalNotification(Map<String, dynamic> notification) {
+    final dutyActionId = notification['duty_action_id'];
+    if (dutyActionId == null) {
+      return false;
+    }
+    final isResolvedVal = notification['is_resolved'];
+    final isResolved = isResolvedVal is bool
+        ? isResolvedVal
+        : (isResolvedVal is int ? isResolvedVal != 0 : false);
+    return !isResolved;
+  }
+
+  bool _isDutyResolvedNotification(Map<String, dynamic> notification) {
+    final dutyActionId = notification['duty_action_id'];
+    if (dutyActionId == null) {
+      return false;
+    }
+    final isResolvedVal = notification['is_resolved'];
+    final isResolved = isResolvedVal is bool
+        ? isResolvedVal
+        : (isResolvedVal is int ? isResolvedVal != 0 : false);
+    return isResolved;
+  }
+
+  Map<String, dynamic>? _extractDutyRefusalData(
+      Map<String, dynamic> notification) {
+    // Пытаемся извлечь данные из extra_data или metadata
+    return {
+      'duty_id': notification['duty_id'] is int ? notification['duty_id'] : int.parse(notification['duty_id']),
+    };
+  }
+
+  void _handleDutyRefusalNotification(Map<String, dynamic> notification) {
+    var data = _extractDutyRefusalData(notification);
+    if (data != null && data['duty_id'] != null) {
+      int dutyId = data['duty_id'] as int;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReassignDutyScreen(
+            dutyId: dutyId,
+            notificationId: notification['id'],
+          ),
+        ),
+      ).then((_) {
+        // Обновляем уведомления после возврата
+        _loadNotifications();
+      });
+    }
+  }
+
   Widget _buildReadButton(bool isSeen, int notificationId) {
     if (isSeen) {
       // Если уже прочитано - неактивная кнопка
@@ -197,28 +249,101 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
                     }
 
+                    bool isDutyRefusal =
+                        _isDutyRefusalNotification(notification);
+                    bool isDutyResolved =
+                        _isDutyResolvedNotification(notification);
+
                     return Card(
                       margin: const EdgeInsets.symmetric(
                           vertical: 8, horizontal: 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(text, style: const TextStyle(fontSize: 16)),
-                            const SizedBox(height: 8),
-                            Text('Заголовок: $title',
-                                style: TextStyle(color: Colors.grey[700])),
-                            Text('Источник: $source',
-                                style: TextStyle(color: Colors.grey[700])),
-                            Text('Дата: $formattedDate',
-                                style: TextStyle(color: Colors.grey[700])),
-                            Align(
-                                alignment: Alignment.centerRight,
-                                child: _buildReadButton(
-                                    notification['is_seen'] ?? false,
-                                    notification['id']))
-                          ],
+                      color: isDutyRefusal ? Colors.red.shade50 : isDutyResolved ? Colors.green.shade50 : null,
+                      child: InkWell(
+                        onTap: isDutyRefusal
+                            ? () => _handleDutyRefusalNotification(notification)
+                            : null,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(text,
+                                        style: const TextStyle(fontSize: 16)),
+                                  ),
+                                  if (isDutyRefusal)
+                                    Icon(Icons.assignment_ind,
+                                        color: Colors.red.shade700),
+                                ],
+                              ),
+                              if (isDutyRefusal) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          size: 16, color: Colors.red.shade700),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Нажмите для переназначения дежурства',
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.red.shade700,
+                                              fontWeight: FontWeight.w500),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (isDutyResolved) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.info_outline,
+                                          size: 16, color: Colors.green.shade700),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Дежурство переназначено',
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.green.shade700,
+                                              fontWeight: FontWeight.w500),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Text('Заголовок: $title',
+                                  style: TextStyle(color: Colors.grey[700])),
+                              Text('Источник: $source',
+                                  style: TextStyle(color: Colors.grey[700])),
+                              Text('Дата: $formattedDate',
+                                  style: TextStyle(color: Colors.grey[700])),
+                              Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _buildReadButton(
+                                      notification['is_seen'] ?? false,
+                                      notification['id']))
+                            ],
+                          ),
                         ),
                       ),
                     );

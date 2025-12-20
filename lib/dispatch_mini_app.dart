@@ -223,16 +223,21 @@ class _TransferDutyScreenState extends State<TransferDutyScreen> {
     final int dutyId = widget.dutyId;
 
     try {
-      Map<String, dynamic>? response = await sendRequest(
-          'POST', 'dispatch/duties/$dutyId/transfer_duty/',
-          body: {'user_id': userId, 'user_reason': _reasonTextController.text});
+      await sendRequest(
+        'POST', 
+        'dispatch/duties/$dutyId/transfer_duty/',
+        body: {'user_id': userId, 'user_reason': _reasonTextController.text},
+      );
+      Navigator.pop(context);
+      if (userId == 0) {
+        raiseSuccessFlushbar(
+            context, "Отказ от дежурства отправлен администратору");
+      } else {
+        raiseSuccessFlushbar(context, "Дежурство передано");
+      }
     } catch (e) {
-      raiseErrorFlushbar(context, 'Не удалось передать дежурство');
-      return;
+      raiseErrorFlushbar(context, 'Не удалось обработать запрос');
     }
-
-    Navigator.pop(context);
-    raiseSuccessFlushbar(context, "Дежурство передано");
   }
 
   @override
@@ -249,15 +254,23 @@ class _TransferDutyScreenState extends State<TransferDutyScreen> {
                   DropdownButtonFormField<User>(
                     isExpanded: true,
                     decoration: const InputDecoration(
-                      labelText: 'Выберите пользователя',
+                      labelText: 'Выберите пользователя (необязательно)',
                       border: OutlineInputBorder(),
+                      helperText:
+                          'Оставьте пустым, чтобы отказаться от дежурства',
                     ),
-                    items: _users.map((user) {
-                      return DropdownMenuItem(
-                        value: user,
-                        child: Text(user.displayName),
-                      );
-                    }).toList(),
+                    items: [
+                      const DropdownMenuItem<User>(
+                        value: null,
+                        child: Text('-- Отказаться от дежурства --'),
+                      ),
+                      ..._users.map((user) {
+                        return DropdownMenuItem(
+                          value: user,
+                          child: Text(user.displayName),
+                        );
+                      }).toList(),
+                    ],
                     onChanged: (value) {
                       setState(() {
                         _selectedUser = value;
@@ -276,9 +289,21 @@ class _TransferDutyScreenState extends State<TransferDutyScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _transferDuty,
-                    child: const Text('Передать дежурство'),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _transferDuty,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _selectedUser == null
+                            ? Colors.red
+                            : Theme.of(context).primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      child: Text(_selectedUser == null
+                          ? 'Отказаться от дежурства'
+                          : 'Передать дежурство'),
+                    ),
                   ),
                 ],
               ),
