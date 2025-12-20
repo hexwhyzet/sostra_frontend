@@ -8,14 +8,12 @@ import 'package:qr_reader/request.dart';
 class ReassignDutyScreen extends StatefulWidget {
   final int dutyId;
   final String? refusalReason;
-  final String? refusedBy;
   final int notificationId;
 
   const ReassignDutyScreen({
     super.key,
     required this.dutyId,
     this.refusalReason,
-    this.refusedBy,
     required this.notificationId,
   });
 
@@ -123,29 +121,6 @@ class _ReassignDutyScreenState extends State<ReassignDutyScreen> {
                         ),
                       ),
                     ),
-                  if (widget.refusedBy != null) ...[
-                    SizedBox(height: 16),
-                    Card(
-                      color: Colors.red.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Отказ от дежурства',
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red.shade700),
-                            ),
-                            SizedBox(height: 8),
-                            Text('Отказался: ${widget.refusedBy}'),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
                   if (widget.refusalReason != null &&
                       widget.refusalReason!.isNotEmpty) ...[
                     SizedBox(height: 16),

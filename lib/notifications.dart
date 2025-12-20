@@ -164,9 +164,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Map<String, dynamic>? _extractDutyRefusalData(
       Map<String, dynamic> notification) {
-    // Пытаемся извлечь данные из extra_data или metadata
     return {
       'duty_id': notification['duty_id'] is int ? notification['duty_id'] : int.parse(notification['duty_id']),
+      'refusal_reason': notification['duty_action_reason'],
     };
   }
 
@@ -180,6 +180,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           builder: (context) => ReassignDutyScreen(
             dutyId: dutyId,
             notificationId: notification['id'],
+            refusalReason: data['refusal_reason'],
           ),
         ),
       ).then((_) {
