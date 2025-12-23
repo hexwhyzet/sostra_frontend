@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
@@ -227,6 +228,7 @@ class _TransferDutyScreenState extends State<TransferDutyScreen> {
           'POST', 'dispatch/duties/$dutyId/transfer_duty/',
           body: {'user_id': userId, 'user_reason': _reasonTextController.text});
     } catch (e) {
+      log(e.toString());
       raiseErrorFlushbar(context, 'Не удалось передать дежурство');
       return;
     }
