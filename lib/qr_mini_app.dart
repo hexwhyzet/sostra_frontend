@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
@@ -94,7 +95,7 @@ class QRMiniApp extends StatefulWidget {
   _QRMiniAppState createState() => _QRMiniAppState();
 }
 
-class _QRMiniAppState extends State<QRMiniApp> {
+class _QRMiniAppState extends State<QRMiniApp> with WidgetsBindingObserver {
   TextEditingController _numberController = TextEditingController();
   String? _savedCode;
   bool _isLoading = true;
@@ -102,11 +103,30 @@ class _QRMiniAppState extends State<QRMiniApp> {
   VisitStorage visitStorage = VisitStorage();
   bool _onRounds = false;
   String? _lastScannedValue;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAndCheckNumber();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true && _savedCode != null) {
+        _checkStatus(_savedCode!);
+      }
+    });
   }
 
   Future<void> _loadAndCheckNumber() async {
@@ -242,6 +262,17 @@ class _QRMiniAppState extends State<QRMiniApp> {
           height: 40.0,
           color: Colors.white,
         ),
+        actions: _savedCode != null ? [
+          IconButton(
+            icon: Icon(Icons.refresh, color: Colors.white),
+            onPressed: () {
+              if (_savedCode != null) {
+                _checkStatus(_savedCode!);
+              }
+            },
+            tooltip: 'Обновить',
+          ),
+        ] : null,
       ),
       body: Padding(
         padding: EdgeInsets.all(16.0),

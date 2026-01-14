@@ -1,12 +1,12 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:qr_reader/canteen/create_dish_order.dart';
 import 'package:qr_reader/request.dart';
 
 import '../alert.dart';
 import 'package:qr_reader/canteen/canteen_manager_mini_app.dart';
-
-import 'dart:io';
-import 'package:image_picker/image_picker.dart';
 
 String getDishTypeName(String? dishType) {
   switch (dishType?.toLowerCase()) {
@@ -75,16 +75,35 @@ class CanteenOrdersMiniApp extends StatefulWidget {
   State<CanteenOrdersMiniApp> createState() => _CanteenOrdersMiniAppState();
 }
 
-class _CanteenOrdersMiniAppState extends State<CanteenOrdersMiniApp> {
+class _CanteenOrdersMiniAppState extends State<CanteenOrdersMiniApp> with WidgetsBindingObserver {
   List<dynamic> dishes = [];
   List<dynamic> orders = [];
   bool isLoadingDishes = true;
   bool isLoadingOrders = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     refreshState();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        refreshState();
+      }
+    });
   }
 
   void refreshState() {
@@ -160,6 +179,15 @@ class _CanteenOrdersMiniAppState extends State<CanteenOrdersMiniApp> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Canteen Mini App'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              refreshState();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: isLoadingDishes || isLoadingOrders
           ? const Center(child: CircularProgressIndicator())
@@ -207,7 +235,7 @@ class _CanteenOrdersMiniAppState extends State<CanteenOrdersMiniApp> {
   }
 }
 
-class OrdersForDayView extends StatelessWidget {
+class OrdersForDayView extends StatefulWidget {
   final String date;
   final List<dynamic> orders;
   final List<dynamic> dishes;
@@ -219,14 +247,64 @@ class OrdersForDayView extends StatelessWidget {
     super.key,
   });
 
-  Map<String, dynamic>? getDishById(int id) {
+  @override
+  State<OrdersForDayView> createState() => _OrdersForDayViewState();
+}
+
+class _OrdersForDayViewState extends State<OrdersForDayView> with WidgetsBindingObserver {
+  Timer? _refreshTimer;
+  List<dynamic> orders = [];
+  List<dynamic> dishes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    orders = widget.orders;
+    dishes = widget.dishes;
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _refreshData();
+      }
+    });
+  }
+
+  Future<void> _refreshData() async {
+    try {
+      final ordersResponse = await sendRequest("GET", "food/orders/");
+      final dishesResponse = await sendRequest("GET", "food/dishes/");
+      setState(() {
+        orders = ordersResponse.where((order) {
+          final orderDate = order['cooking_time'].split('T')[0];
+          return orderDate == widget.date;
+        }).toList();
+        dishes = dishesResponse;
+      });
+    } catch (error) {
+      print('Error refreshing data: $error');
+    }
+  }
+
+  Map<String, dynamic>? _getDishById(int id) {
     return dishes.firstWhere(
           (element) => element['id'] == id,
       orElse: () => null,
     );
   }
 
-  Future<void> deleteOrder(BuildContext context, dynamic order, String comment) async {
+  Future<void> _deleteOrder(BuildContext context, dynamic order, String comment) async {
     try {
       await sendRequest(
           "DELETE", "food/orders/${order['id']}/", body: {'reason': comment});
@@ -274,7 +352,8 @@ class OrdersForDayView extends StatelessWidget {
                 final comment = commentController.text.trim();
                 Navigator.pop(context);
                 Navigator.pop(context);
-                await deleteOrder(context, order, comment);
+                await _deleteOrder(context, order, comment);
+                _refreshData();
               },
               child: const Text('Удалить', style: TextStyle(color: Colors.red)),
             ),
@@ -288,13 +367,22 @@ class OrdersForDayView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Заказы за $date'),
+        title: Text('Заказы за ${widget.date}'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              _refreshData();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: ListView.builder(
         itemCount: orders.length,
         itemBuilder: (context, index) {
           final order = orders[index];
-          final dish = getDishById(order['dish']);
+          final dish = _getDishById(order['dish']);
           return ListTile(
             leading: dish?['photo'] != null
                 ? Image.network(
@@ -310,7 +398,10 @@ class OrdersForDayView extends StatelessWidget {
               children: [
                 IconButton(
                   icon: const Icon(Icons.feedback, color: Colors.blue),
-                  onPressed: () => showReviewDialog(context, order['dish']),
+                  onPressed: () async {
+                    await showReviewDialog(context, order['dish']);
+                    _refreshData();
+                  },
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete, color: Colors.red),

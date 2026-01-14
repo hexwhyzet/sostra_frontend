@@ -20,6 +20,9 @@ import 'data/common/user.dart';
 import 'data/dispatch/duty.dart';
 import 'data/dispatch/incident.dart';
 import 'data/dispatch/incident_message.dart';
+import 'data/dispatch/incident_statistics.dart';
+import 'data/dispatch/duty_point.dart';
+import 'data/common/user.dart';
 
 void main() => runApp(IncidentMiniApp());
 
@@ -318,15 +321,34 @@ class IncidentList extends StatefulWidget {
   _IncidentListState createState() => _IncidentListState();
 }
 
-class _IncidentListState extends State<IncidentList> {
+class _IncidentListState extends State<IncidentList> with WidgetsBindingObserver {
   late int currentUserId;
   List<Incident> incidents = [];
   List<Duty> duties = [];
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     fetchData();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        fetchData();
+      }
+    });
   }
 
   void fetchData() async {
@@ -439,6 +461,24 @@ class _IncidentListState extends State<IncidentList> {
         title: Text("Инциденты"),
         actions: [
           IconButton(
+            icon: Icon(Icons.bar_chart),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => IncidentStatisticsScreen()),
+              );
+            },
+            tooltip: 'Статистика',
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              fetchData();
+            },
+            tooltip: 'Обновить',
+          ),
+          IconButton(
             icon: Icon(Icons.add),
             onPressed: () async {
               await Navigator.push(
@@ -512,10 +552,11 @@ class DutySchedule extends StatefulWidget {
   _DutyScheduleState createState() => _DutyScheduleState();
 }
 
-class _DutyScheduleState extends State<DutySchedule> {
+class _DutyScheduleState extends State<DutySchedule> with WidgetsBindingObserver {
   DateTime selectedDate = DateTime.now();
   List<Duty> duties = [];
   bool isLoading = false;
+  Timer? _refreshTimer;
 
   Future<void> fetchDutiesForDate(DateTime date) async {
     setState(() {
@@ -533,13 +574,42 @@ class _DutyScheduleState extends State<DutySchedule> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     fetchDutiesForDate(selectedDate);
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        fetchDutiesForDate(selectedDate);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Расписание дежурств")),
+      appBar: AppBar(
+        title: Text("Расписание дежурств"),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              fetchDutiesForDate(selectedDate);
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Row(
@@ -1260,6 +1330,469 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                 controller: _chewieController!,
               )
             : const CircularProgressIndicator(),
+      ),
+    );
+  }
+}
+
+class IncidentStatisticsScreen extends StatefulWidget {
+  @override
+  _IncidentStatisticsScreenState createState() =>
+      _IncidentStatisticsScreenState();
+}
+
+class _IncidentStatisticsScreenState extends State<IncidentStatisticsScreen> {
+  IncidentStatistics? _statistics;
+  bool _isLoading = false;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  String? _selectedStatus;
+  int? _selectedPointId;
+  int? _selectedResponsibleUserId;
+  int? _selectedAuthorId;
+
+  List<DutyPoint> _points = [];
+  List<User> _users = [];
+  List<String> _statusOptions = [
+    'opened',
+    'closed',
+    'force_closed',
+    'waiting_to_be_accepted',
+  ];
+  Map<String, String> _statusLabels = {
+    'opened': 'В работе',
+    'closed': 'Выполнено',
+    'force_closed': 'Ненадлежащее выполнение',
+    'waiting_to_be_accepted': 'В ожидании принятия',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFilterData();
+  }
+
+  Future<void> _fetchFilterData() async {
+    try {
+      List<dynamic> pointsResponse =
+          await sendRequest("GET", "dispatch/duty_points/");
+      List<dynamic> usersResponse = await sendRequest("GET", "users/");
+
+      setState(() {
+        _points = DutyPoint.fromJsonList(pointsResponse);
+        _users = User.fromJsonList(usersResponse);
+      });
+    } catch (e) {
+      raiseErrorFlushbar(context, 'Не удалось загрузить данные для фильтров');
+    }
+  }
+
+  Future<void> _fetchStatistics() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      String url = "dispatch/incidents/statistics/?";
+      List<String> params = [];
+
+      if (_startDate != null) {
+        params.add(
+            "start_date=${_startDate!.toIso8601String().split('T')[0]}");
+      }
+      if (_endDate != null) {
+        params.add("end_date=${_endDate!.toIso8601String().split('T')[0]}");
+      }
+      if (_selectedStatus != null && _selectedStatus!.isNotEmpty) {
+        params.add("status=$_selectedStatus");
+      }
+      if (_selectedPointId != null) {
+        params.add("point_id=$_selectedPointId");
+      }
+      if (_selectedResponsibleUserId != null) {
+        params.add("responsible_user_id=$_selectedResponsibleUserId");
+      }
+      if (_selectedAuthorId != null) {
+        params.add("author_id=$_selectedAuthorId");
+      }
+
+      url += params.join("&");
+
+      Map<String, dynamic> response = await sendRequest("GET", url);
+      setState(() {
+        _statistics = IncidentStatistics.fromJson(response);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      raiseErrorFlushbar(context, 'Не удалось загрузить статистику');
+    }
+  }
+
+  Future<void> _selectDate(BuildContext context, bool isStartDate) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: isStartDate
+          ? (_startDate ?? DateTime.now())
+          : (_endDate ?? DateTime.now()),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        if (isStartDate) {
+          _startDate = picked;
+        } else {
+          _endDate = picked;
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Статистика по инцидентам"),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Фильтры
+                  Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Фильтры",
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
+                          SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _selectDate(context, true),
+                                  icon: Icon(Icons.calendar_today),
+                                  label: Text(_startDate == null
+                                      ? "Дата начала"
+                                      : "${_startDate!.day}.${_startDate!.month}.${_startDate!.year}"),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _selectDate(context, false),
+                                  icon: Icon(Icons.calendar_today),
+                                  label: Text(_endDate == null
+                                      ? "Дата окончания"
+                                      : "${_endDate!.day}.${_endDate!.month}.${_endDate!.year}"),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            decoration: InputDecoration(
+                              labelText: "Статус",
+                              border: OutlineInputBorder(),
+                            ),
+                            value: _selectedStatus,
+                            items: [
+                              DropdownMenuItem<String>(
+                                value: null,
+                                child: Text("Все статусы"),
+                              ),
+                              ..._statusOptions.map((status) {
+                                return DropdownMenuItem<String>(
+                                  value: status,
+                                  child: Text(_statusLabels[status] ?? status),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedStatus = value;
+                              });
+                            },
+                          ),
+                          SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            decoration: InputDecoration(
+                              labelText: "Система дежурства",
+                              border: OutlineInputBorder(),
+                            ),
+                            value: _selectedPointId,
+                            items: [
+                              DropdownMenuItem<int>(
+                                value: null,
+                                child: Text("Все системы"),
+                              ),
+                              ..._points.map((point) {
+                                return DropdownMenuItem<int>(
+                                  value: point.id,
+                                  child: Text(point.name),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedPointId = value;
+                              });
+                            },
+                          ),
+                          SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            decoration: InputDecoration(
+                              labelText: "Ответственный дежурный",
+                              border: OutlineInputBorder(),
+                            ),
+                            value: _selectedResponsibleUserId,
+                            items: [
+                              DropdownMenuItem<int>(
+                                value: null,
+                                child: Text("Все дежурные"),
+                              ),
+                              ..._users.map((user) {
+                                return DropdownMenuItem<int>(
+                                  value: user.id,
+                                  child: Text(user.displayName),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedResponsibleUserId = value;
+                              });
+                            },
+                          ),
+                          SizedBox(height: 12),
+                          DropdownButtonFormField<int>(
+                            decoration: InputDecoration(
+                              labelText: "Автор",
+                              border: OutlineInputBorder(),
+                            ),
+                            value: _selectedAuthorId,
+                            items: [
+                              DropdownMenuItem<int>(
+                                value: null,
+                                child: Text("Все авторы"),
+                              ),
+                              ..._users.map((user) {
+                                return DropdownMenuItem<int>(
+                                  value: user.id,
+                                  child: Text(user.displayName),
+                                );
+                              }),
+                            ],
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedAuthorId = value;
+                              });
+                            },
+                          ),
+                          SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _fetchStatistics,
+                              child: Text("Сформировать отчет"),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 16),
+                  // Статистика
+                  if (_isLoading)
+                    Center(child: CircularProgressIndicator())
+                  else if (_statistics != null) ...[
+                    // Общие метрики
+                    Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Метрики",
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            SizedBox(height: 12),
+                            _buildMetricRow(
+                                "Всего инцидентов", "${_statistics!.totalCount}"),
+                            _buildMetricRow("Средний уровень эскалации",
+                                "${_statistics!.averageLevel}"),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    // Статистика по статусам
+                    Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Статистика по статусам",
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            SizedBox(height: 12),
+                            ..._statistics!.statusStatistics.entries.map((entry) {
+                              return _buildStatRow(
+                                  entry.value.display,
+                                  "${entry.value.count} (${entry.value.percentage.toStringAsFixed(1)}%)");
+                            }),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    // Статистика по критичности
+                    Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Статистика по критичности",
+                                style: TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold)),
+                            SizedBox(height: 12),
+                            _buildStatRow(
+                                "Критичные",
+                                "${_statistics!.criticalStatistics.critical.count} (${_statistics!.criticalStatistics.critical.percentage.toStringAsFixed(1)}%)"),
+                            _buildStatRow(
+                                "Некритичные",
+                                "${_statistics!.criticalStatistics.nonCritical.count} (${_statistics!.criticalStatistics.nonCritical.percentage.toStringAsFixed(1)}%)"),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_statistics!.pointStatistics.isNotEmpty) ...[
+                      SizedBox(height: 16),
+                      Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Статистика по системам дежурства",
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
+                              SizedBox(height: 12),
+                              ..._statistics!.pointStatistics.entries.map((entry) {
+                                return _buildStatRow(
+                                    entry.value.name,
+                                    "${entry.value.count} (${entry.value.percentage.toStringAsFixed(1)}%)");
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (_statistics!.responsibleStatistics.isNotEmpty) ...[
+                      SizedBox(height: 16),
+                      Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text("Статистика по ответственным дежурным",
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold)),
+                              SizedBox(height: 12),
+                              ..._statistics!.responsibleStatistics.entries
+                                  .map((entry) {
+                                return _buildStatRow(
+                                    entry.value.name,
+                                    "${entry.value.count} (${entry.value.percentage.toStringAsFixed(1)}%)");
+                              }),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    SizedBox(height: 16),
+                    // Список инцидентов
+                    Text("Список инцидентов (${_statistics!.incidents.length})",
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    SizedBox(height: 12),
+                    ..._statistics!.incidents.map((incident) {
+                      return Card(
+                        margin: EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text(incident.name),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(height: 4),
+                              Text(
+                                  "Описание: ${incident.description.length > 50 ? incident.description.substring(0, 50) + '...' : incident.description}"),
+                              SizedBox(height: 4),
+                              Text("Автор: ${incident.authorName ?? '-'}"),
+                              Text(
+                                  "Ответственный: ${incident.responsibleUserName ?? '-'}"),
+                              Text("Система: ${incident.pointName ?? '-'}"),
+                              Text(
+                                  "Статус: ${_statusLabels[incident.status] ?? incident.status}"),
+                              Text("Уровень: ${incident.level}"),
+                              Text(
+                                  "Дата: ${DateFormat('dd.MM.yyyy HH:mm').format(incident.createdAt)}"),
+                            ],
+                          ),
+                          trailing: incident.isCritical
+                              ? Icon(Icons.warning, color: Colors.red)
+                              : null,
+                        ),
+                      );
+                    }),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: TextStyle(fontSize: 16)),
+          Text(value,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(child: Text(label, style: TextStyle(fontSize: 16))),
+          Text(value, style: TextStyle(fontSize: 16)),
+        ],
       ),
     );
   }

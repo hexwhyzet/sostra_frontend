@@ -3,11 +3,13 @@ import 'dart:developer' as console;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:qr_reader/request.dart';
-import 'package:qr_reader/secure_storage.dart';
+import 'package:qr_reader/settings.dart';
+import 'package:qr_reader/services/password_storage.dart';
 
 import 'alert.dart';
 import 'appbar.dart';
 import 'menu.dart';
+import 'password_reset.dart';
 
 class AuthChecker extends StatefulWidget {
   @override
@@ -29,10 +31,10 @@ class _AuthCheckerState extends State<AuthChecker> {
 
   Future<bool> asyncSetup() async {
     await setupDioInterceptors(
-      getToken: tokenStorage.getToken,
-      getRefreshToken: refreshStorage.getToken,
-      saveToken: tokenStorage.saveToken,
-      saveRefreshToken: refreshStorage.saveToken,
+      getToken: config.authToken.getSetting,
+      getRefreshToken: config.refreshToken.getSetting,
+      saveToken: config.authToken.setSetting,
+      saveRefreshToken: config.refreshToken.setSetting,
       onUnauthorized: () {
         logout();
       },
@@ -41,10 +43,13 @@ class _AuthCheckerState extends State<AuthChecker> {
     return true;
   }
 
-  void logout() {
+  void logout() async {
+    // При выходе удаляем все сохраненные данные, включая пароль
+    await PasswordStorageService.deletePassword();
+    await config.authToken.clearSetting();
+    await config.refreshToken.clearSetting();
+    
     setState(() {
-      tokenStorage.deleteToken();
-      refreshStorage.deleteToken();
       _isAuthenticated = false;
     });
   }
@@ -95,43 +100,86 @@ class _AuthCheckerState extends State<AuthChecker> {
   }
 }
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
 
   LoginScreen({required this.onLoginSuccess});
 
+  @override
+  _LoginScreenState createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    try {
+      // Всегда загружаем сохраненные данные, если они есть
+      final credentials = await PasswordStorageService.getSavedCredentials();
+      if (credentials['username'] != null && credentials['password'] != null) {
+        setState(() {
+          _usernameController.text = credentials['username'] ?? '';
+          _passwordController.text = credentials['password'] ?? '';
+        });
+      }
+    } catch (e) {
+      print('Error loading saved credentials: $e');
+    }
+  }
+
+  Future<void> _performLogin(String username, String password) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      Map<String, dynamic>? response = await sendRequest(
+        'POST',
+        'token/',
+        body: {'username': username, 'password': password},
+        disableInterceptor: true,
+      );
+
+      if (response != null && response.containsKey('access')) {
+        await config.authToken.setSetting(response['access']);
+        await config.refreshToken.setSetting(response['refresh']);
+
+        // Всегда сохраняем пароль для автоматического обновления токена
+        await PasswordStorageService.savePassword(username, password);
+
+        widget.onLoginSuccess();
+      } else {
+        raiseErrorFlushbar(context, "Произошла ошибка запроса");
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        raiseErrorFlushbar(context, "Неверный логин или пароль");
+      } else {
+        raiseErrorFlushbar(context, "Ошибка подключения: ${e.message}");
+      }
+    } catch (e) {
+      raiseErrorFlushbar(context, "Неизвестная ошибка: $e");
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   Future<void> _login(BuildContext context) async {
     final username = _usernameController.text;
     final password = _passwordController.text;
 
     if (username.isNotEmpty && password.isNotEmpty) {
-      try {
-        Map<String, dynamic>? response = await sendRequest(
-          'POST',
-          'token/',
-          body: {'username': username, 'password': password},
-          disableInterceptor: true,
-        );
-
-        if (response != null && response.containsKey('access')) {
-          tokenStorage.saveToken(response['access']);
-          refreshStorage.saveToken(response['refresh']);
-          onLoginSuccess();
-        } else {
-          raiseErrorFlushbar(context, "Произошла ошибка запроса");
-        }
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 401) {
-          raiseErrorFlushbar(context, "Неверный логин или пароль");
-        } else {
-          raiseErrorFlushbar(context, "Ошибка подключения: ${e.message}");
-        }
-      } catch (e) {
-        raiseErrorFlushbar(context, "Неизвестная ошибка: $e");
-      }
+      await _performLogin(username, password);
     } else {
       raiseErrorFlushbar(context, "Пароль и логин должны быть заполнены");
     }
@@ -149,16 +197,45 @@ class LoginScreen extends StatelessWidget {
             TextField(
               controller: _usernameController,
               decoration: InputDecoration(labelText: 'Username'),
+              enabled: !_isLoading,
             ),
+            SizedBox(height: 16),
             TextField(
               controller: _passwordController,
               decoration: InputDecoration(labelText: 'Password'),
               obscureText: true,
+              enabled: !_isLoading,
+            ),
+            SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => PasswordResetRequestScreen(),
+                          ),
+                        );
+                      },
+                child: Text('Забыли пароль?'),
+              ),
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () => _login(context),
-              child: Text('Войти'),
+              onPressed: _isLoading ? null : () => _login(context),
+              style: ElevatedButton.styleFrom(
+                minimumSize: Size(double.infinity, 50),
+              ),
+              child: _isLoading
+                  ? SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text('Войти'),
             ),
           ],
         ),

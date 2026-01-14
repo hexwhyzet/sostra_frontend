@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_reader/request.dart';
@@ -79,10 +80,35 @@ class OrderStats extends StatefulWidget {
   State<OrderStats> createState() => _OrderStatsState();
 }
 
-class _OrderStatsState extends State<OrderStats> {
+class _OrderStatsState extends State<OrderStats> with WidgetsBindingObserver {
   List<dynamic> dishes = [];
   DateTime selectedDate = DateTime.now();
   bool isLoading = true;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    fetchDishes();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        fetchDishes();
+      }
+    });
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -101,11 +127,6 @@ class _OrderStatsState extends State<OrderStats> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    fetchDishes();
-  }
 
   Future<void> fetchDishes() async {
     var dict = {
@@ -130,6 +151,15 @@ class _OrderStatsState extends State<OrderStats> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Статистика по заказам'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              fetchDishes();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -189,17 +219,37 @@ class FeedbacksPage extends StatefulWidget {
   State<FeedbacksPage> createState() => _FeedbacksPageState();
 }
 
-class _FeedbacksPageState extends State<FeedbacksPage> {
+class _FeedbacksPageState extends State<FeedbacksPage> with WidgetsBindingObserver {
   List<dynamic> feedbacks = [];
   List<dynamic> dishes = [];
   bool isLoadingFeedbacks = true;
   bool isLoadingDishes = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     fetchFeedback();
     fetchDishes();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        fetchFeedback();
+        fetchDishes();
+      }
+    });
   }
 
   Future<void> fetchFeedback() async {
@@ -242,7 +292,19 @@ class _FeedbacksPageState extends State<FeedbacksPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Отзывы')),
+      appBar: AppBar(
+        title: const Text('Отзывы'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              fetchFeedback();
+              fetchDishes();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
+      ),
       body: isLoadingFeedbacks || isLoadingDishes
           ? const Center(child: CircularProgressIndicator())
           : feedbacks.isEmpty
@@ -306,17 +368,37 @@ class RemovedOrdersPage extends StatefulWidget {
   State<RemovedOrdersPage> createState() => _RemovedOrdersPageState();
 }
 
-class _RemovedOrdersPageState extends State<RemovedOrdersPage> {
+class _RemovedOrdersPageState extends State<RemovedOrdersPage> with WidgetsBindingObserver {
   List<dynamic> orders = [];
   List<dynamic> dishes = [];
   bool isLoadingRemovedOrders = true;
   bool isLoadingDishes = true;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     fetchOrders();
     fetchDishes();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        fetchOrders();
+        fetchDishes();
+      }
+    });
   }
 
   Future<void> fetchOrders() async {
@@ -361,6 +443,16 @@ class _RemovedOrdersPageState extends State<RemovedOrdersPage> {
     return Scaffold(
         appBar: AppBar(
           title: const Text('Удалённые заказы'),
+          actions: [
+            IconButton(
+              icon: Icon(Icons.refresh),
+              onPressed: () {
+                fetchOrders();
+                fetchDishes();
+              },
+              tooltip: 'Обновить',
+            ),
+          ],
         ),
         body: isLoadingRemovedOrders || isLoadingDishes ? const Center(child: CircularProgressIndicator()) :
         orders.isEmpty ? const Center(child: Text('Нет удалённых заказов')) :

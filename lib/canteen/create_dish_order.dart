@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_reader/request.dart';
@@ -14,7 +15,7 @@ class CreateDishOrderView extends StatefulWidget {
   State<CreateDishOrderView> createState() => _CreateDishOrderState();
 }
 
-class _CreateDishOrderState extends State<CreateDishOrderView> {
+class _CreateDishOrderState extends State<CreateDishOrderView> with WidgetsBindingObserver {
   late List<dynamic> dishes;
   List<dynamic> menu = [];
   bool isLoading = true;
@@ -24,6 +25,32 @@ class _CreateDishOrderState extends State<CreateDishOrderView> {
   DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
   bool createOrderButtonEnabled = true;
   String? selectedCategory;
+  Timer? _refreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    dishes = widget.dishes;
+    loadMenu();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        loadMenu();
+      }
+    });
+  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -59,12 +86,6 @@ class _CreateDishOrderState extends State<CreateDishOrderView> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    dishes = widget.dishes;
-    loadMenu();
-  }
 
   List<dynamic> get filteredDishes {
     final menuDishIds = menu.map((item) => item['dish']).toSet();
@@ -80,6 +101,15 @@ class _CreateDishOrderState extends State<CreateDishOrderView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Создание заказа'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              loadMenu();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())

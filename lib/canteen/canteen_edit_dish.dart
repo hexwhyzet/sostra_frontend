@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../request.dart';
@@ -9,15 +10,34 @@ class DishesEditImagesView extends StatefulWidget {
   State<DishesEditImagesView> createState() => _DishesEditImagesViewState();
 }
 
-class _DishesEditImagesViewState extends State<DishesEditImagesView> {
+class _DishesEditImagesViewState extends State<DishesEditImagesView> with WidgetsBindingObserver {
   List<dynamic> dishes = [];
   bool isLoading = true;
   final ImagePicker _picker = ImagePicker();
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     refreshState();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        refreshState();
+      }
+    });
   }
 
   void refreshState() {
@@ -78,6 +98,15 @@ class _DishesEditImagesViewState extends State<DishesEditImagesView> {
         : Scaffold(
       appBar: AppBar(
         title: const Text('Редактировать фото блюд'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: () {
+              refreshState();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: ListView.builder(
         padding: const EdgeInsets.all(16),

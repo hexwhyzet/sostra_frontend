@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:qr_reader/botton.dart';
 import 'package:qr_reader/universal_safe_area.dart';
+import 'package:qr_reader/profile.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<String?> _getSetting(String key) async {
@@ -62,6 +63,8 @@ class Config {
   DefaultSettingAccessor hostname = DefaultSettingAccessor(
       settingKey: 'hostname', defaultValue: 'appsostra.ru');
   SettingAccessor userId = SettingAccessor(settingKey: 'userId');
+  SettingAccessor authToken = SettingAccessor(settingKey: 'AUTH_TOKEN');
+  SettingAccessor refreshToken = SettingAccessor(settingKey: 'AUTH_REFRESH_TOKEN');
 }
 
 final config = Config();
@@ -125,6 +128,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.all(16.0),
           child: Column(
             children: [
+              StyledWideButton(
+                text: "Профиль",
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ProfileScreen()),
+                  );
+                },
+                bg: Theme.of(context).primaryColor,
+                fg: Colors.white,
+                height: 50,
+                textWidth: 0.5,
+              ),
+              SizedBox(height: 20),
               TextField(
                 controller: _controller,
                 decoration: InputDecoration(labelText: 'Hostname'),
