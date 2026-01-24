@@ -323,7 +323,7 @@ class _FeedbacksPageState extends State<FeedbacksPage> with WidgetsBindingObserv
 
           String formattedDate = "";
           if (feedback['created_at'] != null) {
-            DateTime createdAt = DateTime.parse(feedback['created_at']);
+            DateTime createdAt = DateTime.parse(feedback['created_at']).toLocal();
             formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
           }
 

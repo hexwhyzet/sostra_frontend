@@ -1191,7 +1191,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen>
                           ),
                           SizedBox(height: 4),
                           Text(
-                              'Дата создания: ${DateFormat('dd.MM.yyyy HH:mm').format(_incident!.createdAt)}',
+                              'Дата создания: ${DateFormat('dd.MM.yyyy HH:mm').format(_incident!.createdAt.toLocal())}',
                               style: TextStyle(fontSize: 14)),
                         ],
                       ),
@@ -1241,7 +1241,7 @@ class _IncidentDetailScreenState extends State<IncidentDetailScreen>
                         subtitle: Padding(
                           padding: EdgeInsets.only(top: 5),
                           child: Text(DateFormat('dd.MM.yyyy HH:mm')
-                              .format(DateTime.parse(message.createdAt))),
+                              .format(DateTime.parse(message.createdAt).toLocal())),
                         ),
                       );
                     },
@@ -1751,7 +1751,7 @@ class _IncidentStatisticsScreenState extends State<IncidentStatisticsScreen> {
                                   "Статус: ${_statusLabels[incident.status] ?? incident.status}"),
                               Text("Уровень: ${incident.level}"),
                               Text(
-                                  "Дата: ${DateFormat('dd.MM.yyyy HH:mm').format(incident.createdAt)}"),
+                                  "Дата: ${DateFormat('dd.MM.yyyy HH:mm').format(incident.createdAt.toLocal())}"),
                             ],
                           ),
                           trailing: incident.isCritical

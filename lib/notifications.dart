@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:qr_reader/request.dart';
 import 'package:qr_reader/settings.dart';
@@ -84,28 +86,52 @@ class NotificationsScreen extends StatefulWidget {
   _NotificationsScreenState createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with WidgetsBindingObserver {
   List<dynamic> notifications = [];
   bool isLoadingNotifications = true;
   late int userId;
   int _unreadCount = 0;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadNotifications();
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted) return;
+      if (ModalRoute.of(context)?.isCurrent ?? true) {
+        _loadNotifications();
+      }
+    });
   }
 
   Future<void> _loadNotifications() async {
     try {
       userId = int.parse(await config.userId.getSetting() ?? '0');
       final response = await sendRequest("GET", "users/notifications/$userId/");
+      if (!mounted) return;
       setState(() {
         notifications = response;
         isLoadingNotifications = false;
         _unreadCount = notifications.where((n) => n['is_seen'] == false).length;
       });
+      NotificationBadge.globalKey.currentState?.refreshUnreadCount();
     } catch (error) {
+      if (!mounted) return;
       setState(() {
         isLoadingNotifications = false;
       });
@@ -130,6 +156,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       });
 
       await _loadNotifications(); // Обновляем список
+      NotificationBadge.globalKey.currentState?.refreshUnreadCount();
     } catch (error) {
       setState(() {
         _unreadCount++;
@@ -221,9 +248,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Theme.of(context).canvasColor,
         toolbarHeight: 65,
-        titleTextStyle: TextStyle(color: Theme.of(context).canvasColor),
         title: Text('Уведомления'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh, color: Theme.of(context).canvasColor),
+            onPressed: () {
+              setState(() {
+                isLoadingNotifications = true;
+              });
+              _loadNotifications();
+            },
+            tooltip: 'Обновить',
+          ),
+        ],
       ),
       body: isLoadingNotifications
           ? const Center(child: CircularProgressIndicator())
@@ -245,7 +284,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     String formattedDate = "";
                     if (notification['created_at'] != null) {
                       DateTime createdAt =
-                          DateTime.parse(notification['created_at']);
+                          DateTime.parse(notification['created_at']).toLocal();
                       formattedDate =
                           DateFormat('dd.MM.yyyy HH:mm').format(createdAt);
                     }

@@ -67,7 +67,7 @@ class Visit {
 
   Visit(this.point, int timestamp)
       : _timestamp =
-            DateTime.fromMillisecondsSinceEpoch(timestamp * 1000, isUtc: false);
+            DateTime.fromMillisecondsSinceEpoch(timestamp * 1000, isUtc: true);
 
   String timeAgo() {
     Duration diff = DateTime.now().toUtc().difference(_timestamp);
